@@ -6,6 +6,10 @@ from helpers import prepare_dataset_nli, prepare_train_dataset_qa, \
     prepare_validation_dataset_qa, QuestionAnsweringTrainer, compute_accuracy
 import os
 import json
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
 
 NUM_PREPROCESSING_WORKERS = 2
 
@@ -208,6 +212,47 @@ def main():
                     example_with_prediction['predicted_label'] = int(eval_predictions.predictions[i].argmax())
                     f.write(json.dumps(example_with_prediction))
                     f.write('\n')
+        
+        # Generate true and predicted labels
+        true_labels = [example['label'] for example in eval_dataset]
+        predicted_labels = [int(pred.argmax()) for pred in eval_predictions.predictions]
+
+        # Compute the confusion matrix
+        labels = ["Entailment", "Neutral", "Contradiction"]
+        cm = confusion_matrix(true_labels, predicted_labels, labels=[0, 1, 2])
+
+        # Visualize the confusion matrix
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='d', xticklabels=labels, yticklabels=labels, cmap="Blues", ax=ax)
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.title('Confusion Matrix for SNLI Evaluation')
+        plt.show()
+
+        # Save confusion matrix as an image
+        cm_path = os.path.join(training_args.output_dir, 'confusion_matrix.png')
+        fig.savefig(cm_path)
+        print(f"Confusion matrix saved at {cm_path}")
+
+        # Calculate per-label error rates
+        total_per_label = cm.sum(axis=1)  # Total true occurrences for each label
+        errors_per_label = total_per_label - np.diag(cm)  # Errors per label (off-diagonal sum)
+        error_rates_per_label = errors_per_label / total_per_label
+
+        # Display error rates
+        for i, label in enumerate(labels):
+            print(f"Error rate for '{label}': {error_rates_per_label[i]:.2%}")
+
+        # Save error rates to a file
+        error_rates_path = os.path.join(training_args.output_dir, 'error_rates.json')
+        with open(error_rates_path, 'w') as f:
+            json.dump(
+                {label: f"{error_rates_per_label[i]:.2%}" for i, label in enumerate(labels)},
+                f,
+                indent=4
+            )
+        print(f"Error rates saved at {error_rates_path}")
+
 
 
 if __name__ == "__main__":
